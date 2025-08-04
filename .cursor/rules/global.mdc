@@ -1,0 +1,246 @@
+---
+alwaysApply: true
+---
+# Note App - Development Context & Rules
+
+## 🎯 Project Vision
+Building a local-first, Git-native note-taking app that addresses Logseq's limitations with real-time collaboration, extensibility, and cross-platform performance.
+
+## 🏗️ Core Architecture
+
+### Technology Stack
+- **Frontend**: Vue 3 + TypeScript + Vite (Tauri desktop app)
+- **Backend**: Rust (Tauri backend) for performance-critical operations
+- **Database**: SQLite for local storage + optional PostgreSQL for server sync
+- **Real-time**: WebSocket + CRDT (Yjs/Automerge) for collaboration
+- **Version Control**: Git integration with automatic commits
+- **File Format**: Markdown with block-based structure
+
+### Data Flow Architecture
+1. **User edits** → Frontend emits events
+2. **Events** → WebSocket → Backend CRDT
+3. **CRDT** → Event-sourced database
+4. **Database** → Derive graph state
+5. **Periodic flush** → Markdown files
+6. **Periodic commit** → Git repository
+7. **Optional sync** → Remote Git repository
+
+## 🔧 Core Features
+
+### Essential Features
+- **Block-based editing**: Everything is a referenceable block with UUID
+- **Local-first storage**: All data lives locally, sync is optional
+- **Git integration**: Automatic versioning and change tracking
+- **Real-time collaboration**: WebSocket + CRDT for multi-user editing
+- **Offline functionality**: Full app functionality without network
+- **Search & indexing**: Fast search across all blocks and content
+
+### Extended Features
+- **Whiteboard/diagrams**: Visual note-taking and mind mapping
+- **Properties system**: Structured data and metadata
+- **Query system**: Advanced filtering and data retrieval
+- **Templates**: Reusable note structures
+- **Aliases & references**: Flexible linking and organization
+- **AI integration**: Context export for AI assistance
+
+## 📁 File Structure Standards
+
+```
+src/
+├── components/          # Vue components
+│   ├── editor/         # Block editor components
+│   ├── sidebar/        # Navigation components
+│   └── ui/            # Reusable UI components
+├── stores/            # Pinia stores for state management
+├── services/          # Business logic services
+│   ├── git/          # Git integration
+│   ├── crdt/         # CRDT operations
+│   └── sync/         # Sync services
+├── types/            # TypeScript type definitions
+└── utils/            # Utility functions
+
+src-tauri/
+├── src/
+│   ├── commands/     # Tauri commands
+│   ├── crdt/         # Rust CRDT implementation
+│   ├── git/          # Git operations
+│   └── db/           # Database operations
+```
+
+## 🎨 UI/UX Guidelines
+
+### Design Principles
+- **Local-first mindset**: All actions work offline
+- **Block-centric**: Everything is a block with UUID
+- **Git-native**: Changes are always versioned
+- **Performance**: Optimize for large document handling
+- **Extensibility**: Plugin architecture for features
+
+### Component Standards
+- Use ShadCN-UI components for consistency
+- TailwindCSS for styling
+- Responsive design for desktop/mobile
+- Dark/light theme support
+- Keyboard shortcuts for power users
+
+## 🔒 Data Model
+
+### Block Structure
+```typescript
+interface Block {
+  id: string;           // UUID
+  text: string;         // Content
+  children: string[];   // Child block IDs
+  parent?: string;      // Parent block ID
+  properties: Record<string, any>;
+  created_at: Date;
+  updated_at: Date;
+  created_by: string;
+  last_edited_by: string;
+}
+```
+
+### Event Structure
+```typescript
+interface Event {
+  type: 'block_created' | 'block_updated' | 'block_deleted' | 'block_moved';
+  blockId: string;
+  data: any;
+  userId: string;
+  timestamp: number;
+  sequence: number;
+}
+```
+
+## 🚀 Development Rules
+
+### Code Quality
+- **TypeScript strict mode** for all frontend code
+- **Rust with clippy** for backend code
+- **Comprehensive testing** for CRDT operations
+- **Performance benchmarks** for large documents
+- **Security audit** for file system operations
+
+### Git Integration
+- Auto-commit every 30 seconds of inactivity
+- Meaningful commit messages with block IDs
+- Branch per feature/experiment
+- Git hooks for data integrity
+
+### Performance Requirements
+- Handle 10,000+ blocks without lag
+- Real-time sync with <100ms latency
+- Offline-first with eventual consistency
+- Efficient search across all blocks
+
+### Security Considerations
+- Local file encryption option
+- Secure WebSocket connections
+- Input sanitization for markdown
+- Git credential management
+
+## 🔄 Sync Strategy
+
+### Local-First Principles
+1. All edits happen locally first
+2. Sync is optional and can be disabled
+3. Conflict resolution via CRDT
+4. Offline editing for extended periods
+5. Manual sync control
+
+### Server Options
+- **Self-hosted**: Docker container with PostgreSQL
+- **Cloud sync**: Optional Git hosting integration
+- **Peer-to-peer**: WebRTC for direct sync
+
+## 📝 Documentation Standards
+
+### Code Documentation
+- JSDoc for all public functions
+- Rust doc comments for backend
+- Architecture decision records (ADRs)
+- API documentation with examples
+
+### User Documentation
+- Getting started guide
+- Block editing tutorial
+- Git integration guide
+- Sync configuration
+- Plugin development guide
+
+## 🧪 Testing Strategy
+
+### Test Types
+- **Unit tests**: Individual functions and components
+- **Integration tests**: CRDT operations and Git sync
+- **E2E tests**: Full user workflows
+- **Performance tests**: Large document handling
+- **Offline tests**: Disconnected scenarios
+
+### Test Coverage
+- Minimum 80% code coverage
+- 100% coverage for CRDT operations
+- Performance regression testing
+- Cross-platform compatibility testing
+
+## 🚨 Error Handling
+
+### Error Categories
+- **Network errors**: Graceful offline mode
+- **Git errors**: Automatic retry with user notification
+- **CRDT conflicts**: Automatic resolution with user choice
+- **File system errors**: Backup and recovery
+- **Sync errors**: Queue for retry
+
+### User Experience
+- Clear error messages
+- Recovery suggestions
+- Automatic retry mechanisms
+- Data loss prevention
+
+## 🔧 Development Workflow
+
+### Setup Commands
+```bash
+# Install dependencies
+pnpm install
+
+# Start development
+pnpm tauri dev
+
+# Build for production
+pnpm tauri build
+
+# Run tests
+pnpm test
+
+# Lint and format
+pnpm lint
+pnpm format
+```
+
+### Git Workflow
+- Feature branches from main
+- Pull request reviews required
+- Automated testing on PR
+- Semantic versioning for releases
+
+## 🎯 Success Metrics
+
+### Performance Targets
+- App startup: <2 seconds
+- Block editing: <50ms response
+- Search: <100ms for 10k blocks
+- Sync: <1 second for small changes
+
+### User Experience
+- Zero data loss
+- Seamless offline/online transition
+- Intuitive block editing
+- Fast search and navigation
+
+### Technical Debt
+- <5% code duplication
+- <10 cyclomatic complexity
+- Regular dependency updates
+- Security vulnerability scanning 

@@ -1,160 +1,108 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { ref, onMounted, provide } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { useRouter } from 'vue-router'
 
-const greetMsg = ref("");
-const name = ref("");
+// App-level state
+const isLoading = ref(true)
+const isOnline = ref(true)
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
-}
+// Router
+const router = useRouter()
+
+// App initialization
+onMounted(async () => {
+  try {
+    // Initialize the backend
+    const version = await invoke('get_app_version')
+    console.log('Note app initialized, version:', version)
+    
+    // Health check
+    await invoke('health_check')
+    console.log('Backend health check passed')
+    
+    isLoading.value = false
+  } catch (error) {
+    console.error('Failed to initialize app:', error)
+    isLoading.value = false
+  }
+})
+
+// Provide global app state
+provide('isLoading', isLoading)
+provide('isOnline', isOnline)
+
+// Update document title based on route meta
+router.afterEach((to) => {
+  if (to.meta?.title) {
+    document.title = to.meta.title as string
+  }
+})
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
-
-    <div class="row">
-      <a href="https://vitejs.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
+  <div id="app" class="h-screen flex flex-col theme-transition">
+    <!-- Loading Screen -->
+    <div 
+      v-if="isLoading"
+      class="flex-center h-screen bg-gray-50 dark:bg-gray-900"
+    >
+      <div class="text-center">
+        <div class="animate-spin w-8 h-8 border-2 border-primary-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+        <p class="text-gray-600 dark:text-gray-400">Loading Note app...</p>
+      </div>
     </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
 
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+    <!-- Main App -->
+    <div 
+      v-else
+      class="flex-1 flex flex-col overflow-hidden"
+    >
+      <!-- Router View -->
+      <router-view />
+    </div>
+
+    <!-- Development Info (only in dev mode) -->
+    <div 
+      v-if="$route.query.debug" 
+      class="fixed bottom-4 right-4 bg-black bg-opacity-75 text-white text-xs p-2 rounded"
+    >
+      Route: {{ $route.path }} | Loading: {{ isLoading }}
+    </div>
+  </div>
 </template>
 
-<style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
 <style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
+/* Global styles are in style.css */
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+/* App-specific styles */
+#app {
+  min-height: 100vh;
+  width: 100%;
 }
 
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+/* Loading animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+}
+  to {
+    transform: rotate(360deg);
+}
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+.animate-spin {
+  animation: spin 1s linear infinite;
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
+/* Vue transition classes for route changes */
+.router-enter-active,
+.router-leave-active {
+  transition: opacity 0.2s ease;
 }
 
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+.router-enter-from,
+.router-leave-to {
+  opacity: 0;
   }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
 </style>

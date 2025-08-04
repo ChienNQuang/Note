@@ -1,9 +1,12 @@
-# Data Models & Schemas
+# Data Models & API Interfaces
 
-## 1. Core Data Structures
+This document defines the core data structures, database schema, and API interfaces for the Note application.
 
-### 1.1 Block Interface
+## Core Data Structures
 
+### TypeScript Interfaces
+
+#### Block Interface
 ```typescript
 interface Block {
   // Unique identifier (UUID v4)
@@ -11,6 +14,9 @@ interface Block {
   
   // Block content (markdown text)
   text: string;
+  
+  // Page relationship (REQUIRED - fixed from review analysis)
+  page_id: string;
   
   // Hierarchical relationships
   parent_id?: string;
@@ -35,44 +41,47 @@ interface Block {
   
   // Block type (for future extensibility)
   block_type: BlockType;
+  
+  // CRDT fields (prepared for Phase 3)
+  vector_clock?: VectorClock;
+  operation_id?: string;
 }
 
 enum BlockType {
-  TEXT = "text",
-  HEADING = "heading", 
-  LIST_ITEM = "list_item",
-  CODE = "code",
-  QUOTE = "quote",
-  IMAGE = "image",
-  LINK = "link",
-  REFERENCE = "reference"
+  Text = 'text',
+  Heading = 'heading',
+  ListItem = 'list_item', 
+  Code = 'code',
+  Quote = 'quote',
+  Image = 'image',
+  Link = 'link',
+  Reference = 'reference'
 }
 ```
 
-### 1.2 Page Interface
-
+#### Page Interface
 ```typescript
 interface Page {
-  // Page identifier (derived from title or explicit)
+  // Page identifier (UUID)
   id: string;
   
   // Page title
   title: string;
   
-  // Root blocks of the page
+  // Root blocks of the page (block IDs)
   root_blocks: string[];
   
-  // Page metadata
+  // Page metadata and properties
   properties: Record<string, any>;
   
-  // File system mapping
+  // File system mapping (for Phase 2)
   file_path?: string;
   
   // Timestamps
   created_at: Date;
   updated_at: Date;
   
-  // Collaboration
+  // Collaboration info
   created_by: string;
   last_edited_by: string;
   
@@ -84,15 +93,14 @@ interface Page {
 }
 
 enum PageStatus {
-  DRAFT = "draft",
-  PUBLISHED = "published",
-  ARCHIVED = "archived",
-  DELETED = "deleted"
+  Draft = 'draft',
+  Published = 'published', 
+  Archived = 'archived',
+  Deleted = 'deleted'
 }
 ```
 
-### 1.3 User Interface
-
+#### User Interface
 ```typescript
 interface User {
   // User identifier
@@ -106,11 +114,11 @@ interface User {
   // User preferences
   preferences: UserPreferences;
   
-  // Collaboration status
+  // Collaboration status (for future phases)
   is_online: boolean;
   last_seen: Date;
   
-  // Authentication
+  // Authentication (for future phases)
   auth_token?: string;
   
   // Timestamps
@@ -119,125 +127,49 @@ interface User {
 }
 
 interface UserPreferences {
-  theme: "light" | "dark" | "system";
+  theme: string; // "light", "dark", "system"
   font_size: number;
-  auto_save_interval: number;
+  auto_save_interval: number; // seconds
   git_auto_commit: boolean;
   collaboration_enabled: boolean;
   shortcuts: Record<string, string>;
 }
 ```
 
-## 2. Event System
-
-### 2.1 Block Events
-
+#### Event Interface (for CRDT - Phase 3)
 ```typescript
 interface BlockEvent {
-  // Event identification
-  id: string;
-  type: BlockEventType;
-  
-  // Target block
+  type: 'block_created' | 'block_updated' | 'block_deleted' | 'block_moved';
   block_id: string;
-  
-  // Event data
-  data: BlockEventData;
-  
-  // Event metadata
+  data: any;
   user_id: string;
   timestamp: number;
   sequence: number;
-  
-  // CRDT information
-  vector_clock: VectorClock;
-  causal_context: string[];
 }
 
-enum BlockEventType {
-  BLOCK_CREATED = "block_created",
-  BLOCK_UPDATED = "block_updated", 
-  BLOCK_DELETED = "block_deleted",
-  BLOCK_MOVED = "block_moved",
-  BLOCK_LINKED = "block_linked",
-  BLOCK_UNLINKED = "block_unlinked"
-}
-
-type BlockEventData = 
-  | BlockCreatedData
-  | BlockUpdatedData
-  | BlockDeletedData
-  | BlockMovedData
-  | BlockLinkedData;
-
-interface BlockCreatedData {
-  block: Block;
-  parent_id?: string;
-  position: number;
-}
-
-interface BlockUpdatedData {
-  field: keyof Block;
-  old_value: any;
-  new_value: any;
-  partial_update?: boolean;
-}
-
-interface BlockDeletedData {
-  block_snapshot: Block;
-  preserve_children: boolean;
-}
-
-interface BlockMovedData {
-  old_parent_id?: string;
-  new_parent_id?: string;
-  old_position: number;
-  new_position: number;
-}
-
-interface BlockLinkedData {
-  target_block_id: string;
-  link_type: LinkType;
-}
-
-enum LinkType {
-  REFERENCE = "reference",
-  EMBED = "embed",
-  ALIAS = "alias"
-}
-```
-
-### 2.2 Vector Clock for CRDT
-
-```typescript
 interface VectorClock {
-  // User ID -> logical timestamp mapping
   clocks: Record<string, number>;
-  
-  // Create new vector clock
-  increment(user_id: string): VectorClock;
-  
-  // Compare vector clocks
-  compare(other: VectorClock): ClockComparison;
-  
-  // Merge vector clocks
-  merge(other: VectorClock): VectorClock;
-}
-
-enum ClockComparison {
-  BEFORE = -1,
-  CONCURRENT = 0,
-  AFTER = 1
 }
 ```
 
-## 3. Database Schema (SQLite)
+## Database Schema (SQLite)
 
-### 3.1 Blocks Table
-
+### Phase 1 Schema (Simplified)
 ```sql
+-- Core tables for Phase 1
+CREATE TABLE pages (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    properties TEXT, -- JSON
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT NOT NULL,
+    status TEXT DEFAULT 'draft'
+);
+
 CREATE TABLE blocks (
     id TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL,  -- Required field
     text TEXT NOT NULL,
     parent_id TEXT,
     order_index INTEGER NOT NULL,
@@ -245,54 +177,13 @@ CREATE TABLE blocks (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_by TEXT NOT NULL,
-    last_edited_by TEXT NOT NULL,
     version INTEGER DEFAULT 1,
     block_type TEXT DEFAULT 'text',
-    is_deleted BOOLEAN DEFAULT FALSE,
     
-    FOREIGN KEY (parent_id) REFERENCES blocks(id) ON DELETE CASCADE,
-    FOREIGN KEY (created_by) REFERENCES users(id),
-    FOREIGN KEY (last_edited_by) REFERENCES users(id)
+    FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_id) REFERENCES blocks(id) ON DELETE CASCADE
 );
 
--- Indexes for performance
-CREATE INDEX idx_blocks_parent_id ON blocks(parent_id);
-CREATE INDEX idx_blocks_created_by ON blocks(created_by);
-CREATE INDEX idx_blocks_updated_at ON blocks(updated_at);
-CREATE INDEX idx_blocks_order ON blocks(parent_id, order_index);
-CREATE INDEX idx_blocks_type ON blocks(block_type);
-```
-
-### 3.2 Pages Table
-
-```sql
-CREATE TABLE pages (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    file_path TEXT UNIQUE,
-    properties TEXT, -- JSON
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT NOT NULL,
-    last_edited_by TEXT NOT NULL,
-    status TEXT DEFAULT 'draft',
-    is_deleted BOOLEAN DEFAULT FALSE,
-    
-    FOREIGN KEY (created_by) REFERENCES users(id),
-    FOREIGN KEY (last_edited_by) REFERENCES users(id)
-);
-
--- Indexes
-CREATE INDEX idx_pages_title ON pages(title);
-CREATE INDEX idx_pages_created_by ON pages(created_by);
-CREATE INDEX idx_pages_updated_at ON pages(updated_at);
-CREATE INDEX idx_pages_status ON pages(status);
-CREATE UNIQUE INDEX idx_pages_file_path ON pages(file_path) WHERE file_path IS NOT NULL;
-```
-
-### 3.3 Page Blocks Junction Table
-
-```sql
 CREATE TABLE page_blocks (
     page_id TEXT NOT NULL,
     block_id TEXT NOT NULL,
@@ -303,307 +194,314 @@ CREATE TABLE page_blocks (
     FOREIGN KEY (block_id) REFERENCES blocks(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_page_blocks_page ON page_blocks(page_id);
-CREATE INDEX idx_page_blocks_block ON page_blocks(block_id);
-CREATE INDEX idx_page_blocks_root ON page_blocks(page_id, is_root);
-```
-
-### 3.4 Events Table
-
-```sql
-CREATE TABLE events (
-    id TEXT PRIMARY KEY,
-    event_type TEXT NOT NULL,
-    block_id TEXT,
-    page_id TEXT,
-    event_data TEXT NOT NULL, -- JSON
-    user_id TEXT NOT NULL,
-    timestamp INTEGER NOT NULL,
-    sequence INTEGER NOT NULL,
-    vector_clock TEXT NOT NULL, -- JSON
-    causal_context TEXT, -- JSON array
-    is_applied BOOLEAN DEFAULT FALSE,
-    
-    FOREIGN KEY (block_id) REFERENCES blocks(id),
-    FOREIGN KEY (page_id) REFERENCES pages(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
--- Indexes for event ordering and querying
-CREATE INDEX idx_events_timestamp ON events(timestamp);
-CREATE INDEX idx_events_sequence ON events(sequence);
-CREATE INDEX idx_events_block_id ON events(block_id);
-CREATE INDEX idx_events_user_id ON events(user_id);
-CREATE INDEX idx_events_type ON events(event_type);
-CREATE INDEX idx_events_applied ON events(is_applied);
-```
-
-### 3.5 Users Table
-
-```sql
+-- Users table (for Phase 1 - single local user)
 CREATE TABLE users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    email TEXT UNIQUE,
-    avatar_url TEXT,
+    email TEXT,
     preferences TEXT, -- JSON
-    is_online BOOLEAN DEFAULT FALSE,
-    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-    auth_token TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_online ON users(is_online);
-CREATE INDEX idx_users_last_seen ON users(last_seen);
+-- Indexes for performance
+CREATE INDEX idx_blocks_page_id ON blocks(page_id);
+CREATE INDEX idx_blocks_parent_id ON blocks(parent_id);
+CREATE INDEX idx_blocks_order ON blocks(page_id, order_index);
+CREATE INDEX idx_page_blocks_page ON page_blocks(page_id);
 ```
 
-### 3.6 Search Index Table
-
+### Phase 3+ Schema Additions
 ```sql
-CREATE VIRTUAL TABLE search_index USING fts5(
-    block_id UNINDEXED,
-    content,
-    title,
-    tags,
-    content='blocks',
-    content_rowid='rowid'
+-- Events table for CRDT (Phase 3)
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    data TEXT, -- JSON
+    user_id TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    sequence INTEGER NOT NULL,
+    
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- Triggers to maintain search index
-CREATE TRIGGER search_index_insert AFTER INSERT ON blocks BEGIN
-    INSERT INTO search_index(block_id, content) VALUES (new.id, new.text);
-END;
-
-CREATE TRIGGER search_index_update AFTER UPDATE ON blocks BEGIN
-    UPDATE search_index SET content = new.text WHERE block_id = new.id;
-END;
-
-CREATE TRIGGER search_index_delete AFTER DELETE ON blocks BEGIN
-    DELETE FROM search_index WHERE block_id = old.id;
-END;
+-- Full-text search (Phase 4) 
+CREATE VIRTUAL TABLE search_index USING fts5(
+    block_id,
+    content,
+    page_title
+);
 ```
 
-## 4. API Interfaces
+## API Interfaces
 
-### 4.1 Tauri Commands
+### Tauri Commands
 
-```typescript
-// Block operations
-interface BlockCommands {
-  create_block(data: CreateBlockData): Promise<Block>;
-  update_block(id: string, data: UpdateBlockData): Promise<Block>;
-  delete_block(id: string): Promise<void>;
-  get_block(id: string): Promise<Block | null>;
-  get_blocks_by_page(page_id: string): Promise<Block[]>;
-  move_block(id: string, new_parent: string, position: number): Promise<void>;
-  search_blocks(query: string): Promise<SearchResult[]>;
-}
+#### Page Commands
+```rust
+#[tauri::command]
+async fn create_page(title: String) -> Result<Page, AppError>;
 
-// Page operations  
-interface PageCommands {
-  create_page(data: CreatePageData): Promise<Page>;
-  update_page(id: string, data: UpdatePageData): Promise<Page>;
-  delete_page(id: string): Promise<void>;
-  get_page(id: string): Promise<Page | null>;
-  list_pages(): Promise<Page[]>;
-  export_page_markdown(id: string): Promise<string>;
-  import_page_markdown(content: string): Promise<Page>;
-}
+#[tauri::command] 
+async fn get_page(page_id: String) -> Result<Page, AppError>;
 
-// Git operations
-interface GitCommands {
-  init_repository(path: string): Promise<void>;
-  commit_changes(message: string): Promise<string>;
-  get_commit_history(): Promise<GitCommit[]>;
-  get_file_diff(commit: string, file: string): Promise<string>;
-  restore_version(commit: string): Promise<void>;
-  get_repository_status(): Promise<GitStatus>;
-}
+#[tauri::command]
+async fn update_page(page_id: String, data: UpdatePageRequest) -> Result<Page, AppError>;
 
-// Collaboration operations
-interface CollaborationCommands {
-  start_collaboration_server(port: number): Promise<void>;
-  stop_collaboration_server(): Promise<void>;
-  connect_to_server(url: string): Promise<void>;
-  disconnect_from_server(): Promise<void>;
-  get_online_users(): Promise<User[]>;
-  send_event(event: BlockEvent): Promise<void>;
-}
+#[tauri::command]
+async fn delete_page(page_id: String) -> Result<(), AppError>;
+
+#[tauri::command]
+async fn list_pages() -> Result<Vec<Page>, AppError>;
 ```
 
-### 4.2 WebSocket Protocol
+#### Block Commands
+```rust
+#[tauri::command]
+async fn create_block(data: CreateBlockRequest) -> Result<Block, AppError>;
 
+#[tauri::command]
+async fn get_block(block_id: String) -> Result<Block, AppError>;
+
+#[tauri::command]
+async fn update_block(block_id: String, data: UpdateBlockRequest) -> Result<Block, AppError>;
+
+#[tauri::command]
+async fn delete_block(block_id: String) -> Result<(), AppError>;
+
+#[tauri::command]
+async fn move_block(block_id: String, data: MoveBlockRequest) -> Result<Block, AppError>;
+
+#[tauri::command]
+async fn get_page_blocks(page_id: String) -> Result<Vec<Block>, AppError>;
+```
+
+### WebSocket Protocol (Phase 3)
+
+#### Message Types
 ```typescript
 interface WebSocketMessage {
-  type: MessageType;
+  type: 'connection' | 'auth' | 'event' | 'sync' | 'presence' | 'error';
   data: any;
-  user_id: string;
   timestamp: number;
-  message_id: string;
+  user_id?: string;
 }
 
-enum MessageType {
-  // Connection management
-  CONNECT = "connect",
-  DISCONNECT = "disconnect",
-  HEARTBEAT = "heartbeat",
-  
-  // Authentication
-  AUTH = "auth",
-  AUTH_SUCCESS = "auth_success",
-  AUTH_FAILURE = "auth_failure",
-  
-  // Block events
-  BLOCK_EVENT = "block_event",
-  BLOCK_EVENT_ACK = "block_event_ack",
-  
-  // Sync events
-  SYNC_REQUEST = "sync_request",
-  SYNC_RESPONSE = "sync_response",
-  SYNC_COMPLETE = "sync_complete",
-  
-  // User presence
-  USER_JOINED = "user_joined",
-  USER_LEFT = "user_left",
-  USER_STATUS = "user_status",
-  
-  // Error handling
-  ERROR = "error"
+// Connection messages
+interface ConnectionMessage {
+  type: 'connection';
+  data: {
+    action: 'connect' | 'disconnect';
+    user_id: string;
+  };
+}
+
+// Event messages (CRDT operations)
+interface EventMessage {
+  type: 'event';
+  data: BlockEvent;
+}
+
+// Sync messages
+interface SyncMessage {
+  type: 'sync';
+  data: {
+    events: BlockEvent[];
+    vector_clock: VectorClock;
+  };
 }
 ```
 
-## 5. Configuration Schemas
+## Configuration Schema
 
-### 5.1 Application Configuration
-
+### Application Configuration
 ```typescript
 interface AppConfig {
-  // Database settings
   database: {
     path: string;
-    backup_interval: number;
-    max_backup_count: number;
+    backup_interval: number; // minutes
+    max_backup_files: number;
   };
-  
-  // Git settings
   git: {
     auto_commit: boolean;
-    commit_interval: number;
-    auto_push: boolean;
-    remote_url?: string;
+    commit_interval: number; // seconds
+    repository_path: string;
   };
-  
-  // Collaboration settings
   collaboration: {
     enabled: boolean;
-    server_port: number;
-    max_connections: number;
-    heartbeat_interval: number;
+    server_url?: string;
+    port?: number;
   };
-  
-  // Performance settings
   performance: {
     max_blocks_per_page: number;
-    search_debounce_ms: number;
-    auto_save_interval: number;
-    virtual_scroll_threshold: number;
+    search_index_update_interval: number;
   };
-  
-  // Security settings
   security: {
     encrypt_local_data: boolean;
-    require_auth: boolean;
-    session_timeout: number;
+    session_timeout: number; // minutes
   };
 }
 ```
 
-### 5.2 Export/Import Formats
+## Error Types
 
-```typescript
-interface ExportFormat {
-  version: string;
-  exported_at: Date;
-  exported_by: string;
-  data: {
-    pages: Page[];
-    blocks: Block[];
-    users: User[];
-    metadata: ExportMetadata;
-  };
-}
-
-interface ExportMetadata {
-  total_pages: number;
-  total_blocks: number;
-  export_type: "full" | "partial" | "page";
-  filters_applied?: ExportFilter[];
-}
-
-interface ExportFilter {
-  field: string;
-  operator: "eq" | "neq" | "gt" | "lt" | "contains";
-  value: any;
-}
-```
-
-## 6. Error Types
-
+### Error Handling
 ```typescript
 interface AppError {
   code: ErrorCode;
   message: string;
-  context?: Record<string, any>;
-  timestamp: Date;
-  user_id?: string;
-  stack_trace?: string;
+  details?: any;
 }
 
 enum ErrorCode {
   // Database errors
-  DB_CONNECTION_FAILED = "DB_CONNECTION_FAILED",
-  DB_QUERY_FAILED = "DB_QUERY_FAILED",
-  DB_CONSTRAINT_VIOLATION = "DB_CONSTRAINT_VIOLATION",
+  DatabaseConnectionFailed = 'database_connection_failed',
+  DatabaseQueryFailed = 'database_query_failed',
+  DatabaseConstraintViolation = 'database_constraint_violation',
   
-  // Git errors
-  GIT_INIT_FAILED = "GIT_INIT_FAILED",
-  GIT_COMMIT_FAILED = "GIT_COMMIT_FAILED",
-  GIT_PUSH_FAILED = "GIT_PUSH_FAILED",
-  
-  // Collaboration errors
-  WEBSOCKET_CONNECTION_FAILED = "WEBSOCKET_CONNECTION_FAILED",
-  SYNC_CONFLICT = "SYNC_CONFLICT",
-  USER_UNAUTHORIZED = "USER_UNAUTHORIZED",
-  
-  // Validation errors
-  INVALID_BLOCK_DATA = "INVALID_BLOCK_DATA",
-  INVALID_PAGE_DATA = "INVALID_PAGE_DATA",
-  MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD",
+  // Validation errors  
+  InvalidBlockData = 'invalid_block_data',
+  InvalidPageData = 'invalid_page_data',
+  MissingRequiredField = 'missing_required_field',
   
   // File system errors
-  FILE_NOT_FOUND = "FILE_NOT_FOUND",
-  FILE_PERMISSION_DENIED = "FILE_PERMISSION_DENIED",
-  EXPORT_FAILED = "EXPORT_FAILED"
+  FileNotFound = 'file_not_found',
+  FilePermissionDenied = 'file_permission_denied',
+  ExportFailed = 'export_failed',
+  
+  // Git errors (Phase 2)
+  GitInitFailed = 'git_init_failed',
+  GitCommitFailed = 'git_commit_failed',
+  GitPushFailed = 'git_push_failed',
+  
+  // Collaboration errors (Phase 3)
+  WebSocketConnectionFailed = 'websocket_connection_failed',
+  SyncConflict = 'sync_conflict',
+  UserUnauthorized = 'user_unauthorized',
+  
+  // Generic errors
+  Internal = 'internal',
+  SerializationError = 'serialization_error'
 }
 ```
 
-## 7. Migration Schema
+## Export/Import Formats
 
-```typescript
-interface Migration {
-  version: number;
-  name: string;
-  up: string[];  // SQL statements to apply
-  down: string[]; // SQL statements to rollback
-  applied_at?: Date;
-  checksum: string;
-}
+### Markdown Export Format
+```markdown
+---
+title: "Page Title"
+created_at: "2024-01-01T00:00:00Z"
+updated_at: "2024-01-01T00:00:00Z"
+tags: ["tag1", "tag2"]
+properties:
+  color: "blue"
+  priority: 5
+---
 
-interface MigrationHistory {
-  current_version: number;
-  migrations: Migration[];
-  last_migration_at: Date;
+# Page Title
+
+This is a root block.
+
+- This is a child block
+  - This is a nested child block
+- Another child block
+
+> This is a quote block
+
+```javascript
+// This is a code block
+console.log("Hello, world!");
+```
+```
+
+### JSON Export Format
+```json
+{
+  "version": "1.0",
+  "export_date": "2024-01-01T00:00:00Z",
+  "pages": [
+    {
+      "id": "page-uuid",
+      "title": "Page Title", 
+      "blocks": [
+        {
+          "id": "block-uuid",
+          "text": "Block content",
+          "parent_id": null,
+          "children": ["child-block-uuid"],
+          "order": 0,
+          "block_type": "text",
+          "properties": {}
+        }
+      ],
+      "properties": {},
+      "tags": [],
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
 }
-``` 
+```
+
+## Migration Schema
+
+### Database Migration System
+```sql
+CREATE TABLE migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Example migration
+INSERT INTO migrations (version, description) VALUES 
+('001_initial_schema', 'Create initial tables for pages, blocks, and users'),
+('002_add_search_index', 'Add full-text search capability'),
+('003_add_crdt_support', 'Add CRDT fields and events table');
+```
+
+---
+
+## Frontend UI Component Library
+
+The Note application uses **Shadcn-Vue** as the primary UI component library:
+
+### Shadcn-Vue Integration
+- **Library**: [shadcn-vue](https://www.shadcn-vue.com/) - Vue port of the popular shadcn/ui
+- **Installation**: Components are copied directly into the project (not as dependencies)
+- **Styling**: Built with TailwindCSS for easy customization
+- **Components Path**: `@/components/ui/`
+- **Import Pattern**: `import { Button } from '@/components/ui/button'`
+
+### Key Benefits
+- **No Additional Dependencies**: Components are copied into your project
+- **Full Customization**: Complete control over component code and styling
+- **TailwindCSS Integration**: Seamless styling with our existing design system
+- **TypeScript Support**: Full TypeScript support out of the box
+- **Community Driven**: Active community with regular updates
+
+### Usage Example
+```vue
+<script setup lang="ts">
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+</script>
+
+<template>
+  <Card>
+    <CardHeader>
+      <CardTitle>Create New Page</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <Input placeholder="Page title..." />
+      <Button class="mt-4">Create Page</Button>
+    </CardContent>
+  </Card>
+</template>
+```
+
+This approach ensures we have maximum flexibility and control over our UI components while maintaining consistency and quality. 

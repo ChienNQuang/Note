@@ -4,6 +4,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import PageEditor from '@/components/editor/PageEditor.vue'
+import SearchComponent from '@/components/search/SearchComponent.vue'
+import ExportDialog from '@/components/export/ExportDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -11,6 +13,8 @@ const route = useRoute()
 const pageId = ref(route.params.pageId as string)
 const pageTitle = ref('Untitled Page')
 const isEditing = ref(false)
+const showSearch = ref(false)
+const showExport = ref(false)
 
 onMounted(() => {
   console.log('Editor loaded for page:', pageId.value)
@@ -34,6 +38,12 @@ function savePage() {
   // TODO: Implement page saving in later phases
   console.log('Saving page:', pageTitle.value)
   isEditing.value = false
+}
+
+function handleExported(format: string, path: string) {
+  console.log(`Exported ${format} to:`, path)
+  showExport.value = false
+  // Could show a toast notification here
 }
 </script>
 
@@ -91,6 +101,22 @@ function savePage() {
             <Button
               variant="ghost"
               size="sm"
+              @click="showSearch = true"
+            >
+              🔍 Search
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              @click="showExport = true"
+            >
+              📤 Export
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
               disabled
             >
               ⚙️
@@ -135,13 +161,25 @@ function savePage() {
 
         <Card>
           <CardHeader class="pb-3">
+            <CardTitle class="text-sm">Phase 1.4 Features</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-2 text-xs text-muted-foreground">
+            <div class="text-green-600 font-medium">✅ Enhanced Storage</div>
+            <div class="text-green-600 font-medium">✅ Full-Text Search</div>
+            <div class="text-green-600 font-medium">✅ Markdown Export</div>
+            <div class="text-green-600 font-medium">✅ JSON Export</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader class="pb-3">
             <CardTitle class="text-sm">Coming Next</CardTitle>
           </CardHeader>
           <CardContent class="space-y-1 text-xs text-muted-foreground">
-            <div>🗃️ SQLite Storage (Phase 1.4)</div>
-            <div>📤 Markdown Export (Phase 1.4)</div>
+            <div>📝 Page Templates (Phase 1.5)</div>
             <div>🔄 Git Integration (Phase 2)</div>
             <div>👥 Collaboration (Phase 3)</div>
+            <div>🧠 AI Integration (Phase 4)</div>
           </CardContent>
         </Card>
       </aside>
@@ -176,6 +214,35 @@ function savePage() {
         </div>
       </div>
     </main>
+
+    <!-- Search Dialog -->
+    <div
+      v-if="showSearch"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+      @click.self="showSearch = false"
+    >
+      <Card class="w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        <CardHeader>
+          <div class="flex items-center justify-between">
+            <CardTitle>Search</CardTitle>
+            <Button variant="ghost" size="sm" @click="showSearch = false">
+              ✕
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent class="max-h-[80vh] overflow-auto">
+          <SearchComponent />
+        </CardContent>
+      </Card>
+    </div>
+
+    <!-- Export Dialog -->
+    <ExportDialog 
+      v-model:is-open="showExport"
+      :page-id="pageId"
+      :page-title="pageTitle"
+      @exported="handleExported"
+    />
   </div>
 </template>
 

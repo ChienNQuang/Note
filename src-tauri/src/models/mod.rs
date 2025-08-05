@@ -1,7 +1,8 @@
-pub mod page;
-pub mod block;
-pub mod user;
- 
-pub use page::*;
-pub use block::*;
-pub use user::*; 
+pub mod node;
+
+pub use node::{
+    Node,
+    CreateNodeRequest,
+    UpdateNodeRequest,
+    NodeWithChildren
+}; 

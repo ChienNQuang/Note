@@ -33,6 +33,9 @@ pub enum AppError {
     #[error("Export failed: {0}")]
     ExportFailed(String),
     
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+    
     // Git errors (for future phases)
     #[error("Git initialization failed: {0}")]
     GitInitFailed(String),

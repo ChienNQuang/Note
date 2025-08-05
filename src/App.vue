@@ -2,10 +2,12 @@
 import { ref, onMounted, provide } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useRouter } from 'vue-router'
+import CommandPalette from '@/components/CommandPalette.vue'
 
 // App-level state
 const isLoading = ref(true)
 const isOnline = ref(true)
+const showCommandPalette = ref(false)
 
 // Router
 const router = useRouter()
@@ -16,10 +18,6 @@ onMounted(async () => {
     // Initialize the backend
     const version = await invoke('get_app_version')
     console.log('Note app initialized, version:', version)
-    
-    // Health check
-    await invoke('health_check')
-    console.log('Backend health check passed')
     
     isLoading.value = false
   } catch (error) {
@@ -60,6 +58,9 @@ router.afterEach((to) => {
     >
       <!-- Router View -->
       <router-view />
+      
+      <!-- Command Palette -->
+      <CommandPalette v-model:open="showCommandPalette" />
     </div>
 
     <!-- Development Info (only in dev mode) -->

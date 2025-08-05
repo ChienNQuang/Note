@@ -1,26 +1,26 @@
 import type { RouteRecordRaw } from 'vue-router'
 
 // Lazy load components for better performance
-const Home = () => import('@/views/Home.vue')
-const Editor = () => import('@/views/Editor.vue')
+const JournalView = () => import('@/views/JournalView.vue')
+const NodeView = () => import('@/views/NodeView.vue')
 const Settings = () => import('@/views/Settings.vue')
 
 export const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    name: 'Home',
-    component: Home,
+    name: 'Journal',
+    component: JournalView,
     meta: {
-      title: 'Note - Home',
+      title: 'Daily Note',
     },
   },
   {
-    path: '/page/:pageId',
-    name: 'Editor',
-    component: Editor,
+    path: '/node/:nodeId',
+    name: 'Node',
+    component: NodeView,
     props: true,
     meta: {
-      title: 'Note - Editor',
+      title: 'Note',
     },
   },
   {
@@ -28,7 +28,7 @@ export const routes: RouteRecordRaw[] = [
     name: 'Settings',
     component: Settings,
     meta: {
-      title: 'Note - Settings',
+      title: 'Settings',
     },
   },
   {

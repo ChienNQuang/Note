@@ -1,47 +1,37 @@
 # Note App - Complete Project Planning Documentation
 
-## ⚠️ IMPORTANT: Read This First!
+## ⚠️ **IMPORTANT: This Project Has Been Refactored**
 
-**Before implementing anything, read the [Review Analysis](REVIEW_ANALYSIS.md)** which identifies critical dependency issues in the original plan and provides corrected solutions.
+This documentation has been updated to reflect a major architectural pivot towards a **unified node model**, inspired by applications like Logseq and Tana.
 
-**Use the [Corrected Roadmap](roadmap/02-corrected-roadmap.md)** instead of the original roadmap for implementation.
+**Key Changes**:
+-   **No More Pages/Blocks**: Everything is now a single entity called a **Node**.
+-   **Journal-First Workflow**: The application opens to a daily journal.
+-   **Bi-Directional Linking**: A core feature for creating a knowledge graph.
+-   **Dark Theme by Default**.
+
+Please review the updated documents before proceeding with implementation.
 
 ## 📋 Overview
 
-This directory contains comprehensive project planning documentation for the Note application - a local-first, Git-native note-taking app built with Vue 3, TypeScript, Rust, and Tauri. The documentation follows a top-down approach from high-level architecture to granular implementation tasks suitable for junior developers.
-
-## 🏗️ Project Vision
-
-**Building a local-first, Git-native note-taking app that addresses Logseq's limitations with real-time collaboration, extensibility, and cross-platform performance.**
-
-### Core Principles
-- **Local-First**: All data lives locally, sync is optional
-- **Git-Native**: Automatic versioning and change tracking  
-- **Block-Centric**: Everything is a referenceable block with UUID
-- **Real-Time Collaboration**: WebSocket + CRDT for multi-user editing
-- **Cross-Platform**: Desktop-first with mobile support
-- **Performance**: Handle 10,000+ blocks without lag
+This directory contains the refactored project plan for the Note application - a local-first, Git-native, node-based note-taking app.
 
 ## 📁 Documentation Structure
 
 ### 🎯 Architecture
-- **[System Overview](architecture/01-system-overview.md)**: High-level system design, data flow, technology stack, and scalability considerations
+- **[System Overview](architecture/01-system-overview.md)**: High-level design for the new node-centric architecture.
 
 ### 🛣️ Roadmap  
-- **[Feature Roadmap](roadmap/01-feature-roadmap.md)**: 28-week development plan broken into 5 phases with detailed tasks, testing, and validation steps
-- **[Corrected Roadmap](roadmap/02-corrected-roadmap.md)**: ⚠️ **USE THIS** - Fixed roadmap addressing critical dependency issues (32 weeks)
+- **[Refactored Roadmap](roadmap/02-corrected-roadmap.md)**: A completely new development plan focused on the journal-first, node-based approach.
 
 ### 🔧 Implementation
-- **[Data Models](implementation/01-data-models.md)**: TypeScript interfaces, database schemas, API specifications, and error handling
-- **[Frontend Components](implementation/02-frontend-components.md)**: Vue 3 components, Pinia stores, and service implementations
-- **[Backend Services](implementation/03-backend-services.md)**: Rust/Tauri services including database, Git, and CRDT implementations
+- **[Data Models](implementation/01-data-models.md)**: The new unified `Node` interface and database schema.
+- **[Frontend Components](implementation/02-frontend-components.md)**: Refactored component plan for the Journal and Node views.
+- **[Backend Services](implementation/03-backend-services.md)**: Refactored backend plan with a unified `NodeService`.
 
 ### 🧪 Testing
-- **[Testing Strategy](testing/01-testing-strategy.md)**: Comprehensive testing pyramid covering unit, integration, E2E, and performance tests
-- **[Validation & Verification](testing/02-validation-verification.md)**: Quality assurance, user acceptance testing, and release criteria
-
-### 🔍 Review & Analysis
-- **[Review Analysis](REVIEW_ANALYSIS.md)**: ⚠️ **READ FIRST** - Critical dependency issues found and fixes required
+- **[Testing Strategy](testing/01-testing-strategy.md)**: Updated testing strategy to focus on node operations and linking.
+- **[Validation & Verification](testing/alidation-verification.md)**: Updated validation plans for the new feature set.
 
 ## 🚀 Development Phases *(CORRECTED)*
 

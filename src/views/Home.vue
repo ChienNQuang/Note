@@ -96,7 +96,7 @@ function toggleCreateForm() {
               📝 Note
             </h1>
             <Badge variant="secondary" class="text-xs">
-              Phase 1.2
+              Phase 1.4
             </Badge>
           </div>
           <Button variant="ghost" size="sm" @click="openSettings">
@@ -324,16 +324,19 @@ function toggleCreateForm() {
                   <li>• Core Infrastructure</li>
                   <li>• Database Service</li>
                   <li>• Page Management</li>
+                  <li>• Block System Core</li>
+                  <li>• Enhanced Storage & FTS5 Search</li>
+                  <li>• Markdown/JSON Export</li>
                   <li>• Shadcn-Vue Components</li>
                 </ul>
               </div>
               <div>
                 <h4 class="font-medium text-foreground mb-2">🔄 Coming Next</h4>
                 <ul class="space-y-1 text-muted-foreground">
-                  <li>• Block System Core (Phase 1.3)</li>
+                  <li>• Page Templates (Phase 1.5)</li>
                   <li>• Git Integration (Phase 2)</li>
                   <li>• Real-time Collaboration (Phase 3)</li>
-                  <li>• Search & Advanced Features (Phase 4)</li>
+                  <li>• AI Integration (Phase 4)</li>
                 </ul>
               </div>
             </div>

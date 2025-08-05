@@ -37,6 +37,7 @@ const isEditing = computed(() =>
   block.value ? blockStore.focusedBlockId === block.value.id : isCreating.value
 )
 const depth = computed(() => block.value ? blockStore.getBlockDepth(block.value.id) : 0)
+const isDevelopment = computed(() => import.meta.env.DEV)
 const placeholder = computed(() => {
   switch (blockType.value) {
     case 'heading': return 'Heading'
@@ -432,7 +433,7 @@ watch(() => block.value?.block_type, (newType) => {
 
     <!-- Debug info (development only) -->
     <div 
-      v-if="import.meta.env.DEV && block"
+      v-if="isDevelopment && block"
       class="text-xs text-muted-foreground mt-1 opacity-50"
     >
       ID: {{ block.id.slice(-8) }} | Order: {{ block.order }} | Depth: {{ depth }}

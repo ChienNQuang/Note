@@ -2,6 +2,7 @@
 
 // Phase 1: Database service
 pub mod database;
+pub mod link_service;
 
 // Phase 2: Git manager (to be implemented)  
 // pub mod git_manager;
@@ -11,4 +12,5 @@ pub mod database;
 // pub mod websocket_server;
 
 // Re-exports for easier access
-pub use database::DatabaseService; 
+pub use database::connection::DatabaseService;
+pub use link_service::LinkService; 

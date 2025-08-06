@@ -9,7 +9,7 @@ pub async fn export_to_json(
     path: String,
 ) -> AppResult<()> {
     let path = PathBuf::from(path);
-    db.export_to_json(&path)
+    db.export_to_json(&path).await
 }
 
 #[tauri::command]
@@ -18,7 +18,7 @@ pub async fn import_from_json(
     path: String,
 ) -> AppResult<()> {
     let path = PathBuf::from(path);
-    db.import_from_json(&path)
+    db.import_from_json(&path).await
 }
 
 #[tauri::command]
@@ -26,12 +26,12 @@ pub async fn export_node_to_markdown(
     db: State<'_, DatabaseService>,
     node_id: String,
 ) -> AppResult<String> {
-    db.export_node_to_markdown(&node_id)
+    db.export_node_to_markdown(&node_id).await
 }
 
 #[tauri::command]
 pub async fn export_all_to_markdown(
     db: State<'_, DatabaseService>,
 ) -> AppResult<String> {
-    db.export_all_to_markdown()
+    db.export_all_to_markdown().await
 }

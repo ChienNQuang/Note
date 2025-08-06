@@ -65,12 +65,23 @@ pub enum AppError {
 }
 
 // Implement From traits for common error types
-impl From<rusqlite::Error> for AppError {
-    fn from(err: rusqlite::Error) -> Self {
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
         match err {
-            rusqlite::Error::SqliteFailure(_, Some(msg)) => {
-                AppError::DatabaseQueryFailed(msg)
+            sqlx::Error::Database(db_err) => {
+                if let Some(code) = db_err.code() {
+                    AppError::DatabaseQueryFailed(format!("Database error {}: {}", code, db_err.message()))
+                } else {
+                    AppError::DatabaseQueryFailed(db_err.message().to_string())
+                }
             }
+            sqlx::Error::RowNotFound => AppError::DatabaseQueryFailed("Row not found".to_string()),
+            sqlx::Error::ColumnNotFound(_) => AppError::DatabaseQueryFailed("Column not found".to_string()),
+            sqlx::Error::ColumnDecode { .. } => AppError::DatabaseQueryFailed("Column decode error".to_string()),
+            sqlx::Error::Protocol(_) => AppError::DatabaseConnectionFailed("Database protocol error".to_string()),
+            sqlx::Error::PoolClosed => AppError::DatabaseConnectionFailed("Database pool closed".to_string()),
+            sqlx::Error::PoolTimedOut => AppError::DatabaseConnectionFailed("Database pool timeout".to_string()),
+            sqlx::Error::WorkerCrashed => AppError::DatabaseConnectionFailed("Database worker crashed".to_string()),
             _ => AppError::DatabaseQueryFailed(err.to_string()),
         }
     }

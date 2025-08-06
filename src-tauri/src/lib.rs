@@ -37,10 +37,17 @@ pub fn run() {
 
     tracing::info!("Starting Note application");
 
-    // Initialize services
-    let db_service = DatabaseService::new()
-        .expect("Failed to initialize database service");
-    let link_service = LinkService::new(db_service.clone());
+    // Create tokio runtime for async initialization
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+    
+    // Initialize services asynchronously
+    let (db_service, link_service) = runtime.block_on(async {
+        let db_service = DatabaseService::new()
+            .await
+            .expect("Failed to initialize database service");
+        let link_service = LinkService::new(db_service.clone());
+        (db_service, link_service)
+    });
     
     tracing::info!("Services initialized successfully");
 
@@ -69,9 +76,9 @@ pub fn run() {
             get_unlinked_references,
             // Search commands
             search_nodes,
-            find_nodes_by_tag,
+            search_nodes_by_tags,
+            search_nodes_by_properties,
             get_root_nodes,
-            get_recent_nodes,
             // Stats commands
             get_database_stats,
             get_node_stats,

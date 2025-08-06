@@ -1,59 +1,48 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useNodeStore } from '@/stores/nodeStore'
-import type { Node, NodeWithChildren } from '@/services/nodeService'
+import type { Node, NodeId } from '@/services/nodeService'
 import { Button } from '@/components/ui/button'
-import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Hash, CheckSquare, List } from 'lucide-vue-next'
+import { ChevronRight, ChevronDown, GripVertical, Hash, CheckSquare, List } from 'lucide-vue-next'
 import SlashMenu from './SlashMenu.vue'
 
 interface Props {
-  node: Node | NodeWithChildren
+  nodeId: NodeId
   isRoot?: boolean
   level?: number
   isNew?: boolean
+  defaultExpanded?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isRoot: false,
   level: 0,
-  isNew: false
+  isNew: false,
+  defaultExpanded: true
 })
 
 const emit = defineEmits<{
-  'node-updated': [node: Node]
-  'node-created': [parentId: string, afterId?: string]
-  'node-deleted': [nodeId: string]
   'focus-next': []
   'focus-prev': []
 }>()
 
 const nodeStore = useNodeStore()
+
+// Get the most up-to-date node data from the store, falling back to props
+const currentNode = nodeStore.getNodeRef(props.nodeId)
+
 const isEditing = ref(false)
 const editContent = ref('')
 const contentEl = ref<HTMLDivElement>()
-const isExpanded = ref(true)
-const showActions = ref(false)
+const isExpanded = ref(props.defaultExpanded)
+const showActions = ref(true)
 const showSlashMenu = ref(false)
 const slashMenuPosition = ref({ x: 0, y: 0 })
-const nodeType = ref(props.node.properties?.type || 'text')
-const isChecked = ref(props.node.properties?.checked || false)
+const nodeType = ref(currentNode.value.properties?.type || 'text')
+const isChecked = ref(currentNode.value.properties?.checked || false)
 
 const hasChildren = computed(() => {
-  if ('child_nodes' in props.node) {
-    return props.node.child_nodes.length > 0
-  }
-  return props.node.children.length > 0
-})
-
-const childNodes = computed(() => {
-  if ('child_nodes' in props.node) {
-    return props.node.child_nodes
-  }
-  // Load children if we have IDs but not the full nodes
-  if (props.node.children.length > 0) {
-    return props.node.children.map(id => nodeStore.getNodeById(id)).filter(Boolean)
-  }
-  return []
+  return currentNode.value.children.length > 0
 })
 
 const placeholder = computed(() => {
@@ -72,19 +61,19 @@ const nodeIcon = computed(() => {
   }
 })
 
-watch(() => props.node.content, (newContent) => {
+watch(() => currentNode.value.content, (newContent) => {
   editContent.value = newContent
 }, { immediate: true })
 
 onMounted(() => {
-  if (props.isNew || (props.node.content === '' && !props.isRoot)) {
+  if (props.isNew || (currentNode.value.content === '' && !props.isRoot)) {
     startEdit()
   }
 })
 
 function startEdit() {
   isEditing.value = true
-  editContent.value = props.node.content
+  editContent.value = currentNode.value.content
   nextTick(() => {
     if (contentEl.value) {
       contentEl.value.textContent = editContent.value
@@ -107,20 +96,22 @@ function startEdit() {
 
 async function saveEdit() {
   const newContent = contentEl.value?.textContent || ''
-  if (newContent !== props.node.content) {
+  
+  if (newContent !== currentNode.value.content) {
+    console.log('saveEdit', newContent)
     try {
-      const updated = await nodeStore.updateNode(props.node.id, {
+      const updated = await nodeStore.updateNode(currentNode.value.id, {
         content: newContent,
         properties: {
-          ...props.node.properties,
+          ...currentNode.value.properties,
           type: nodeType.value,
           checked: isChecked.value
         }
       })
-      emit('node-updated', updated)
+      console.log('updated', updated)
     } catch (error) {
       console.error('Failed to update node:', error)
-      editContent.value = props.node.content
+      editContent.value = currentNode.value.content
     }
   }
   isEditing.value = false
@@ -128,7 +119,7 @@ async function saveEdit() {
 }
 
 function cancelEdit() {
-  editContent.value = props.node.content
+  editContent.value = currentNode.value.content
   isEditing.value = false
   showSlashMenu.value = false
 }
@@ -150,7 +141,6 @@ async function handleKeydown(event: KeyboardEvent) {
   
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
-    if (showSlashMenu.value) return // Let slash menu handle it
     
     await saveEdit()
     createSiblingNode()
@@ -168,7 +158,7 @@ async function handleKeydown(event: KeyboardEvent) {
     event.preventDefault()
     const prevNode = getPreviousNode()
     if (prevNode) {
-      await deleteNode()
+      await nodeStore.deleteNode(currentNode.value.id)
       // Focus previous node
       nextTick(() => {
         const prevEditor = document.querySelector(`[data-node-id="${prevNode.id}"]`)
@@ -219,19 +209,17 @@ function handleSlashCommand(command: any) {
 
 async function createChildNode() {
   try {
-    const order = hasChildren.value ? props.node.children.length : 0
+    const order = hasChildren.value ? currentNode.value.children.length : 0
     const newNode = await nodeStore.createNode({
       content: '',
-      parent_id: props.node.id,
+      parent_id: currentNode.value.id,
       order: order
     })
-    
     // Expand this node to show the new child
     isExpanded.value = true
     
     // Reload to get updated children
-    await nodeStore.loadNodeWithChildren(props.node.id)
-    
+    await nodeStore.loadNode(currentNode.value.id)
     // Focus the new node
     nextTick(() => {
       const newEditor = document.querySelector(`[data-node-id="${newNode.id}"]`)
@@ -245,16 +233,16 @@ async function createChildNode() {
 }
 
 async function createSiblingNode() {
-  if (!props.isRoot && props.node.parent_id) {
+  if (!props.isRoot && currentNode.value.parent_id) {
     try {
       const newNode = await nodeStore.createNode({
         content: '',
-        parent_id: props.node.parent_id,
-        order: props.node.order + 1
+        parent_id: currentNode.value.parent_id,
+        order: currentNode.value.order + 1
       })
       
       // Reload parent to show new sibling
-      await nodeStore.loadNodeWithChildren(props.node.parent_id)
+      await nodeStore.loadNode(currentNode.value.parent_id)
       
       // Focus the new node
       nextTick(() => {
@@ -267,19 +255,9 @@ async function createSiblingNode() {
       console.error('Failed to create sibling node:', error)
     }
   } else if (props.isRoot) {
+    console.log('createChildNode')
     // For root node, create a child instead
-    createChildNode()
-  }
-}
-
-async function deleteNode() {
-  if (props.isRoot) return // Can't delete root
-  
-  try {
-    await nodeStore.deleteNode(props.node.id)
-    emit('node-deleted', props.node.id)
-  } catch (error) {
-    console.error('Failed to delete node:', error)
+    await createChildNode()
   }
 }
 
@@ -288,15 +266,15 @@ async function indentNode() {
   
   // Find previous sibling to make it the parent
   const siblings = await getSiblings()
-  const currentIndex = siblings.findIndex(n => n.id === props.node.id)
+  const currentIndex = siblings.findIndex(n => n.id === currentNode.value.id)
   
   if (currentIndex > 0) {
     const newParent = siblings[currentIndex - 1]
     try {
-      await nodeStore.moveNode(props.node.id, newParent.id, newParent.children.length)
+      await nodeStore.moveNode(currentNode.value.id, newParent.id, newParent.children.length)
       // Reload the previous parent
-      if (props.node.parent_id) {
-        await nodeStore.loadNodeWithChildren(props.node.parent_id)
+      if (currentNode.value.parent_id) {
+        await nodeStore.loadNode(currentNode.value.parent_id)
       }
     } catch (error) {
       console.error('Failed to indent node:', error)
@@ -305,27 +283,27 @@ async function indentNode() {
 }
 
 async function outdentNode() {
-  if (props.isRoot || !props.node.parent_id) return
+  if (props.isRoot || !currentNode.value.parent_id) return
   
   // Get parent's parent
-  const parent = await nodeStore.loadNode(props.node.parent_id)
+  const parent = await nodeStore.loadNode(currentNode.value.parent_id)
   if (!parent.parent_id) return // Can't outdent from root level
   
   try {
     // Move after parent
-    await nodeStore.moveNode(props.node.id, parent.parent_id, parent.order + 1)
+    await nodeStore.moveNode(currentNode.value.id, parent.parent_id, parent.order + 1)
     // Reload both old and new parents
-    await nodeStore.loadNodeWithChildren(props.node.parent_id)
-    await nodeStore.loadNodeWithChildren(parent.parent_id)
+    await nodeStore.loadNode(currentNode.value.parent_id)
+    await nodeStore.loadNode(parent.parent_id)
   } catch (error) {
     console.error('Failed to outdent node:', error)
   }
 }
 
 async function getSiblings(): Promise<Node[]> {
-  if (!props.node.parent_id) return []
+  if (!currentNode.value.parent_id) return []
   
-  const parent = await nodeStore.loadNode(props.node.parent_id)
+  const parent = await nodeStore.loadNode(currentNode.value.parent_id)
   const siblings = []
   for (const childId of parent.children) {
     const child = await nodeStore.loadNode(childId)
@@ -362,9 +340,9 @@ function handleContentInput() {
 async function toggleTodo() {
   isChecked.value = !isChecked.value
   try {
-    await nodeStore.updateNode(props.node.id, {
+    await nodeStore.updateNode(currentNode.value.id, {
       properties: {
-        ...props.node.properties,
+        ...currentNode.value.properties,
         checked: isChecked.value
       }
     })
@@ -376,7 +354,7 @@ async function toggleTodo() {
 
 // Parse content for [[wikilinks]]
 const formattedContent = computed(() => {
-  let content = props.node.content
+  let content = currentNode.value.content
   
   // Replace wikilinks
   content = content.replace(/\[\[(.*?)\]\]/g, (_match, linkText) => {
@@ -400,19 +378,17 @@ function handleContentClick(event: MouseEvent) {
 
 <template>
   <div 
-    :data-node-id="node.id"
+    v-if="currentNode"
+    :data-node-id="currentNode.id"
     class="group relative node-editor"
     @mouseenter="showActions = true"
     @mouseleave="showActions = false"
   >
     <div class="flex items-start space-x-1 py-0.5">
       <!-- Drag handle -->
-      <div 
-        v-if="!isRoot && showActions" 
-        class="opacity-0 group-hover:opacity-30 hover:!opacity-60 cursor-move p-1"
-      >
+      <!-- <div class="cursor-move p-1 flex items-center">
         <GripVertical class="h-4 w-4" />
-      </div>
+      </div> -->
       
       <!-- Expand/Collapse button -->
       <Button
@@ -454,7 +430,7 @@ function handleContentClick(event: MouseEvent) {
             'text-base': nodeType === 'text' || nodeType === 'list'
           }"
         >
-          <span v-if="node.content" v-html="formattedContent" />
+          <span v-if="currentNode.content" v-html="formattedContent" />
           <span v-else class="text-muted-foreground">{{ placeholder }}</span>
         </div>
         
@@ -474,44 +450,14 @@ function handleContentClick(event: MouseEvent) {
           :data-placeholder="placeholder"
         />
       </div>
-      
-      <!-- Actions -->
-      <div 
-        v-if="showActions && !isEditing" 
-        class="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-6 w-6 p-0"
-          @click="createChildNode"
-          title="Add child node"
-        >
-          <Plus class="h-4 w-4" />
-        </Button>
-        <Button
-          v-if="!isRoot"
-          variant="ghost"
-          size="icon"
-          class="h-6 w-6 p-0 hover:text-destructive"
-          @click="deleteNode"
-          title="Delete node"
-        >
-          <Trash2 class="h-4 w-4" />
-        </Button>
-      </div>
     </div>
     
     <!-- Children -->
     <div v-if="isExpanded && hasChildren" class="ml-6 border-l-2 border-accent pl-2">
-      <template v-for="child in childNodes" :key="child?.id || 'unknown'">
+      <template v-for="child in currentNode.children" :key="child">
         <Node
-          v-if="child"
-          :node="child"
+          :node-id="child"
           :level="level + 1"
-          @node-updated="emit('node-updated', $event)"
-          @node-created="emit('node-created', $event)"
-          @node-deleted="emit('node-deleted', $event)"
         />
       </template>
     </div>

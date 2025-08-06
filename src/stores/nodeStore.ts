@@ -1,82 +1,72 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { nodeService, type Node, type NodeWithChildren, type CreateNodeRequest, type UpdateNodeRequest } from '@/services/nodeService'
+import { Ref, ref } from 'vue'
+import { nodeService, type Node, type CreateNodeRequest, type UpdateNodeRequest, NodeId } from '@/services/nodeService'
 
 export const useNodeStore = defineStore('node', () => {
   // State
-  const nodes = ref<Map<string, Node>>(new Map())
+  const nodes = ref<Map<NodeId, Ref<Node>>>(new Map())
   const currentDailyNote = ref<Node | null>(null)
-  const isLoading = ref(false)
   const error = ref<string | null>(null)
 
   // Getters
   const getNodeById = (id: string) => nodes.value.get(id)
 
+  const getNodeRef = (id: string) => {
+    const node = nodes.value.get(id)
+    if (!node) {
+      throw new Error(`Node with id ${id} not found`)
+    }
+    return node
+  }
+
   // Actions
   async function loadDailyNote(date?: string) {
-    isLoading.value = true
     error.value = null
     try {
       const dateStr = date || new Date().toISOString().split('T')[0]
       const node = await nodeService.getOrCreateDailyNote(dateStr)
-      nodes.value.set(node.id, node)
+      if (!nodes.value.has(node.id)) {
+        nodes.value.set(node.id, ref(node))
+      }
+      else {
+        nodes.value.get(node.id)!.value = node
+      }
       currentDailyNote.value = node
       return node
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load daily note'
       throw e
-    } finally {
-      isLoading.value = false
     }
   }
 
   async function loadNode(nodeId: string) {
-    isLoading.value = true
     error.value = null
     try {
       const node = await nodeService.getNode(nodeId)
-      nodes.value.set(node.id, node)
+      if (!nodes.value.has(node.id)) {
+        nodes.value.set(node.id, ref(node))
+      }
+      else {
+        nodes.value.get(node.id)!.value = node
+      }
       return node
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load node'
       throw e
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  async function loadNodeWithChildren(nodeId: string) {
-    isLoading.value = true
-    error.value = null
-    try {
-      const nodeWithChildren = await nodeService.getNodeWithChildren(nodeId)
-      // Store the main node and all children in the map
-      const storeNodeRecursive = (node: NodeWithChildren) => {
-        nodes.value.set(node.id, node)
-        node.child_nodes.forEach(child => storeNodeRecursive(child))
-      }
-      storeNodeRecursive(nodeWithChildren)
-      return nodeWithChildren
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : 'Failed to load node with children'
-      throw e
-    } finally {
-      isLoading.value = false
     }
   }
 
   async function createNode(data: CreateNodeRequest) {
-    isLoading.value = true
     error.value = null
     try {
       const node = await nodeService.createNode(data)
-      nodes.value.set(node.id, node)
+      nodes.value.set(node.id, ref(node))
       
       // Update parent's children array if it exists
       if (data.parent_id) {
         const parent = nodes.value.get(data.parent_id)
         if (parent) {
-          parent.children.push(node.id)
+          parent.value.children.push(node.id)
         }
       }
       
@@ -84,38 +74,37 @@ export const useNodeStore = defineStore('node', () => {
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to create node'
       throw e
-    } finally {
-      isLoading.value = false
     }
   }
 
   async function updateNode(nodeId: string, data: UpdateNodeRequest) {
-    isLoading.value = true
     error.value = null
     try {
       const node = await nodeService.updateNode(nodeId, data)
-      nodes.value.set(node.id, node)
+      if (!nodes.value.has(node.id)) {
+        nodes.value.set(node.id, ref(node))
+      }
+      else {
+        nodes.value.get(node.id)!.value = node
+      }
       return node
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to update node'
       throw e
-    } finally {
-      isLoading.value = false
     }
   }
 
   async function deleteNode(nodeId: string) {
-    isLoading.value = true
     error.value = null
     try {
       await nodeService.deleteNode(nodeId)
       
       // Remove from parent's children array
       const node = nodes.value.get(nodeId)
-      if (node?.parent_id) {
-        const parent = nodes.value.get(node.parent_id)
+      if (node?.value.parent_id) {
+        const parent = nodes.value.get(node.value.parent_id)
         if (parent) {
-          parent.children = parent.children.filter(id => id !== nodeId)
+          parent.value.children = parent.value.children.filter(id => id !== nodeId)
         }
       }
       
@@ -123,13 +112,10 @@ export const useNodeStore = defineStore('node', () => {
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to delete node'
       throw e
-    } finally {
-      isLoading.value = false
     }
   }
 
   async function moveNode(nodeId: string, newParentId: string | null, newOrder: number) {
-    isLoading.value = true
     error.value = null
     try {
       await nodeService.moveNode(nodeId, newParentId, newOrder)
@@ -138,10 +124,10 @@ export const useNodeStore = defineStore('node', () => {
       const node = nodes.value.get(nodeId)
       if (node) {
         // Remove from old parent
-        if (node.parent_id) {
-          const oldParent = nodes.value.get(node.parent_id)
+        if (node.value.parent_id) {
+          const oldParent = nodes.value.get(node.value.parent_id)
           if (oldParent) {
-            oldParent.children = oldParent.children.filter(id => id !== nodeId)
+            oldParent.value.children = oldParent.value.children.filter(id => id !== nodeId)
           }
         }
         
@@ -149,41 +135,44 @@ export const useNodeStore = defineStore('node', () => {
         if (newParentId) {
           const newParent = nodes.value.get(newParentId)
           if (newParent) {
-            newParent.children.push(nodeId)
+            newParent.value.children.push(nodeId)
           }
         }
         
         // Update node
-        node.parent_id = newParentId || undefined
-        node.order = newOrder
+        node.value.parent_id = newParentId || undefined
+        node.value.order = newOrder
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to move node'
       throw e
-    } finally {
-      isLoading.value = false
     }
   }
 
   async function searchNodes(query: string) {
-    isLoading.value = true
     error.value = null
     try {
       const results = await nodeService.searchNodes(query)
-      results.forEach(node => nodes.value.set(node.id, node))
+      results.forEach(node => {
+        if (!nodes.value.has(node.id)) {
+          nodes.value.set(node.id, ref(node))
+        }
+      })
       return results
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to search nodes'
       throw e
-    } finally {
-      isLoading.value = false
     }
   }
 
   async function getLinkedReferences(nodeId: string) {
     try {
       const refs = await nodeService.getLinkedReferences(nodeId)
-      refs.forEach(node => nodes.value.set(node.id, node))
+      refs.forEach(node => {
+        if (!nodes.value.has(node.id)) {
+          nodes.value.set(node.id, ref(node))
+        }
+      })
       return refs
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to get linked references'
@@ -194,7 +183,11 @@ export const useNodeStore = defineStore('node', () => {
   async function getUnlinkedReferences(nodeId: string) {
     try {
       const refs = await nodeService.getUnlinkedReferences(nodeId)
-      refs.forEach(node => nodes.value.set(node.id, node))
+      refs.forEach(node => {
+        if (!nodes.value.has(node.id)) {
+          nodes.value.set(node.id, ref(node))
+        }
+      })
       return refs
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to get unlinked references'
@@ -210,16 +203,16 @@ export const useNodeStore = defineStore('node', () => {
     // State
     nodes,
     currentDailyNote,
-    isLoading,
     error,
-    
+
     // Getters
     getNodeById,
+    getNodeRef,
     
     // Actions
+
     loadDailyNote,
     loadNode,
-    loadNodeWithChildren,
     createNode,
     updateNode,
     deleteNode,

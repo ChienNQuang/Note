@@ -9,28 +9,35 @@ pub async fn search_nodes(
     query: String,
     limit: Option<usize>,
 ) -> AppResult<Vec<Node>> {
-    db.search_nodes(&query, limit)
+    let limit = limit.unwrap_or(50) as i64;
+    db.search_nodes(&query, limit).await
 }
 
 #[tauri::command]
-pub async fn find_nodes_by_tag(
+pub async fn search_nodes_by_tags(
     db: State<'_, DatabaseService>,
-    tag: String,
+    tags: Vec<String>,
+    limit: Option<usize>,
 ) -> AppResult<Vec<Node>> {
-    db.find_nodes_by_tag(&tag)
+    let limit = limit.unwrap_or(50) as i64;
+    db.search_nodes_by_tags(&tags, limit).await
+}
+
+#[tauri::command]
+pub async fn search_nodes_by_properties(
+    db: State<'_, DatabaseService>,
+    property_key: String,
+    property_value: String,
+    limit: Option<usize>,
+) -> AppResult<Vec<Node>> {
+    let limit = limit.unwrap_or(50) as i64;
+    db.search_nodes_by_properties(&property_key, &property_value, limit).await
 }
 
 #[tauri::command]
 pub async fn get_root_nodes(
     db: State<'_, DatabaseService>,
 ) -> AppResult<Vec<Node>> {
-    db.get_root_nodes()
+    db.get_root_nodes().await
 }
 
-#[tauri::command]
-pub async fn get_recent_nodes(
-    db: State<'_, DatabaseService>,
-    limit: usize,
-) -> AppResult<Vec<Node>> {
-    db.get_recent_nodes(limit)
-}

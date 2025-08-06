@@ -1,24 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export interface Node {
-  id: string
-  content: string
-  parent_id?: string
-  children: string[]
-  order: number
-  properties: Record<string, any>
-  tags: string[]
-  created_at: string
-  updated_at: string
-  created_by: string
-  version: number
-}
+export type NodeId = string
 
-export interface NodeWithChildren {
-  id: string
+export interface Node {
+  id: NodeId
   content: string
-  parent_id?: string
-  children: string[]
+  parent_id?: NodeId
+  children: NodeId[]
   order: number
   properties: Record<string, any>
   tags: string[]
@@ -26,12 +14,11 @@ export interface NodeWithChildren {
   updated_at: string
   created_by: string
   version: number
-  child_nodes: NodeWithChildren[]
 }
 
 export interface CreateNodeRequest {
   content: string
-  parent_id?: string
+  parent_id?: NodeId
   order?: number
   properties?: Record<string, any>
   tags?: string[]
@@ -50,10 +37,6 @@ class NodeService {
 
   async getNode(nodeId: string): Promise<Node> {
     return await invoke('get_node', { nodeId })
-  }
-
-  async getNodeWithChildren(nodeId: string): Promise<NodeWithChildren> {
-    return await invoke('get_node_with_children', { nodeId })
   }
 
   async updateNode(nodeId: string, data: UpdateNodeRequest): Promise<Node> {

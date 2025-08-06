@@ -2,11 +2,9 @@ use crate::errors::AppResult;
 use super::connection::DatabaseService;
 
 impl DatabaseService {
-    pub(crate) fn initialize_schema(&self) -> AppResult<()> {
-        let conn = self.get_connection()?;
-        
+    pub(crate) async fn initialize_schema(&self) -> AppResult<()> {
         // Create nodes table
-        conn.execute(
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS nodes (
                 id TEXT PRIMARY KEY,
                 content TEXT NOT NULL,
@@ -19,78 +17,80 @@ impl DatabaseService {
                 created_by TEXT NOT NULL,
                 version INTEGER DEFAULT 1,
                 FOREIGN KEY (parent_id) REFERENCES nodes(id) ON DELETE CASCADE
-            )",
-            [],
-        )?;
+            )"
+        )
+        .execute(&self.pool)
+        .await?;
         
         // Create node_links table
-        conn.execute(
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS node_links (
                 source_node_id TEXT NOT NULL,
                 target_node_id TEXT NOT NULL,
                 PRIMARY KEY (source_node_id, target_node_id),
                 FOREIGN KEY (source_node_id) REFERENCES nodes(id) ON DELETE CASCADE,
                 FOREIGN KEY (target_node_id) REFERENCES nodes(id) ON DELETE CASCADE
-            )",
-            [],
-        )?;
+            )"
+        )
+        .execute(&self.pool)
+        .await?;
         
         // Create FTS table
-        conn.execute(
+        sqlx::query(
             "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
                 content,
                 content=nodes,
                 content_rowid=rowid
-            )",
-            [],
-        )?;
+            )"
+        )
+        .execute(&self.pool)
+        .await?;
         
         // Create FTS triggers
-        conn.execute(
+        sqlx::query(
             "CREATE TRIGGER IF NOT EXISTS nodes_fts_insert AFTER INSERT ON nodes BEGIN
                 INSERT INTO nodes_fts(rowid, content) VALUES (new.rowid, new.content);
-            END",
-            [],
-        )?;
+            END"
+        )
+        .execute(&self.pool)
+        .await?;
         
-        conn.execute(
+        sqlx::query(
             "CREATE TRIGGER IF NOT EXISTS nodes_fts_delete AFTER DELETE ON nodes BEGIN
                 INSERT INTO nodes_fts(nodes_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-            END",
-            [],
-        )?;
+            END"
+        )
+        .execute(&self.pool)
+        .await?;
         
-        conn.execute(
+        sqlx::query(
             "CREATE TRIGGER IF NOT EXISTS nodes_fts_update AFTER UPDATE ON nodes BEGIN
                 INSERT INTO nodes_fts(nodes_fts, rowid, content) VALUES('delete', old.rowid, old.content);
                 INSERT INTO nodes_fts(rowid, content) VALUES (new.rowid, new.content);
-            END",
-            [],
-        )?;
+            END"
+        )
+        .execute(&self.pool)
+        .await?;
         
         // Create indexes for performance
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id)",
-            [],
-        )?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id)")
+            .execute(&self.pool)
+            .await?;
         
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_order ON nodes(parent_id, order_index)",
-            [],
-        )?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_nodes_order ON nodes(parent_id, order_index)")
+            .execute(&self.pool)
+            .await?;
         
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_updated_at ON nodes(updated_at DESC)",
-            [],
-        )?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_nodes_updated_at ON nodes(updated_at DESC)")
+            .execute(&self.pool)
+            .await?;
         
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_links_target_id ON node_links(target_node_id)",
-            [],
-        )?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_links_target_id ON node_links(target_node_id)")
+            .execute(&self.pool)
+            .await?;
         
         // Create users table
-        conn.execute(
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -98,31 +98,28 @@ impl DatabaseService {
                 preferences TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )",
-            [],
-        )?;
+            )"
+        )
+        .execute(&self.pool)
+        .await?;
         
-        self.return_connection(conn);
         Ok(())
     }
 
-    pub(crate) fn ensure_default_user(&self) -> AppResult<()> {
-        let conn = self.get_connection()?;
-        
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM users",
-            [],
-            |row| row.get(0)
-        )?;
+    pub(crate) async fn ensure_default_user(&self) -> AppResult<()> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(0);
         
         if count == 0 {
-            conn.execute(
-                "INSERT INTO users (id, name) VALUES (?1, ?2)",
-                rusqlite::params!["default_user", "Local User"],
-            )?;
+            sqlx::query("INSERT INTO users (id, name) VALUES (?1, ?2)")
+                .bind("default_user")
+                .bind("Local User")
+                .execute(&self.pool)
+                .await?;
         }
         
-        self.return_connection(conn);
         Ok(())
     }
-} 
+}

@@ -1,21 +1,18 @@
-use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use sqlx::{SqlitePool, SqliteConnection, Sqlite, Transaction, Row};
+use sqlx::sqlite::SqlitePoolOptions;
 use std::path::PathBuf;
-use tracing::{info, debug};
+use tracing::info;
 use dirs;
 
 use crate::errors::{AppError, AppResult};
 
 pub struct DatabaseService {
     pub(crate) db_path: PathBuf,
-    connection_pool: Arc<Mutex<Vec<Connection>>>,
-    max_connections: usize,
-    pool_timeout: Duration,
+    pub(crate) pool: SqlitePool,
 }
 
 impl DatabaseService {
-    pub fn new() -> AppResult<Self> {
+    pub async fn new() -> AppResult<Self> {
         let app_dir = dirs::data_dir()
             .ok_or_else(|| AppError::Internal("Could not find data directory".to_string()))?
             .join("note-app");
@@ -25,120 +22,94 @@ impl DatabaseService {
         let db_path = app_dir.join("note.db");
         info!("Initializing database at: {:?}", db_path);
         
+        let database_url = format!("sqlite:{}", db_path.display());
+        
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .acquire_timeout(std::time::Duration::from_secs(10))
+            .connect(&database_url)
+            .await
+            .map_err(|e| AppError::DatabaseConnectionFailed(e.to_string()))?;
+        
         let service = DatabaseService {
             db_path,
-            connection_pool: Arc::new(Mutex::new(Vec::new())),
-            max_connections: 5,
-            pool_timeout: Duration::from_secs(10),
+            pool,
         };
         
-        service.initialize_schema()?;
-        service.ensure_default_user()?;
+        service.initialize_schema().await?;
+        service.ensure_default_user().await?;
         
         info!("Database service initialized successfully");
         Ok(service)
     }
     
     #[cfg(test)]
-    pub fn new_test(db_path: &str) -> Self {
+    pub async fn new_test(db_path: &str) -> AppResult<Self> {
+        let database_url = format!("sqlite:{}", db_path);
+        
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await
+            .map_err(|e| AppError::DatabaseConnectionFailed(e.to_string()))?;
+        
         let service = DatabaseService {
             db_path: PathBuf::from(db_path),
-            connection_pool: Arc::new(Mutex::new(Vec::new())),
-            max_connections: 5,
-            pool_timeout: Duration::from_secs(10),
+            pool,
         };
-        service
+        
+        service.initialize_schema().await?;
+        service.ensure_default_user().await?;
+        Ok(service)
     }
     
     #[cfg(test)]
-    pub fn init_database(&self) -> AppResult<()> {
-        self.initialize_schema()?;
-        self.ensure_default_user()?;
+    pub async fn init_database(&self) -> AppResult<()> {
+        self.initialize_schema().await?;
+        self.ensure_default_user().await?;
         Ok(())
     }
     
-    pub(crate) fn get_connection(&self) -> AppResult<Connection> {
-        let start = std::time::Instant::now();
-        
-        loop {
-            if start.elapsed() > self.pool_timeout {
-                return Err(AppError::DatabaseConnectionFailed(
-                    "Connection pool timeout".to_string()
-                ));
-            }
-            
-            if let Some(conn) = self.connection_pool.lock().unwrap().pop() {
-                debug!("Reusing existing connection from pool");
-                return Ok(conn);
-            }
-            
-            if self.connection_pool.lock().unwrap().len() < self.max_connections {
-                let conn = self.create_connection()?;
-                debug!("Created new database connection");
-                return Ok(conn);
-            }
-            
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-    
-    pub(crate) fn return_connection(&self, conn: Connection) {
-        if let Ok(mut pool) = self.connection_pool.lock() {
-            pool.push(conn);
-            debug!("Returned connection to pool");
-        }
-    }
-    
-    fn create_connection(&self) -> AppResult<Connection> {
-        let conn = Connection::open(&self.db_path)?;
-        conn.execute("PRAGMA foreign_keys = ON", [])?;
-        conn.busy_timeout(Duration::from_secs(5))?;
-        Ok(conn)
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 
     /// Execute a database operation with proper connection management
-    pub fn with_connection<F, T>(&self, operation: F) -> AppResult<T>
+    pub async fn with_connection<F, T, Fut>(&self, operation: F) -> AppResult<T>
     where
-        F: FnOnce(&Connection) -> rusqlite::Result<T>,
+        F: FnOnce(&mut SqliteConnection) -> Fut,
+        Fut: std::future::Future<Output = sqlx::Result<T>>,
     {
-        let conn = self.get_connection()?;
-        let result = operation(&conn);
-        self.return_connection(conn);
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| AppError::DatabaseConnectionFailed(e.to_string()))?;
+        
+        let result = operation(&mut *conn).await;
         
         result.map_err(|e| AppError::DatabaseQueryFailed(e.to_string()))
     }
     
     /// Execute a database operation with transaction
-    pub fn with_transaction<F, T>(&self, operation: F) -> AppResult<T>
+    pub async fn with_transaction<F, T, Fut>(&self, operation: F) -> AppResult<T>
     where
-        F: FnOnce(&mut rusqlite::Transaction) -> rusqlite::Result<T>,
+        F: FnOnce(Transaction<'_, Sqlite>) -> Fut,
+        Fut: std::future::Future<Output = sqlx::Result<T>>,
     {
-        let mut conn = self.get_connection()?;
+        let tx = self.pool.begin().await
+            .map_err(|e| AppError::DatabaseConnectionFailed(e.to_string()))?;
         
-        let mut tx = conn.transaction()?;
-        let result = operation(&mut tx);
-        
-        if result.is_ok() {
-            tx.commit()?;
-        } else {
-            let _ = tx.rollback();
-        }
-        
-        self.return_connection(conn);
+        let result = operation(tx).await;
         
         result.map_err(|e| AppError::DatabaseQueryFailed(e.to_string()))
     }
 
     /// Get the default user ID for Phase 1
-    pub fn get_default_user_id(&self) -> AppResult<String> {
-        self.with_connection(|conn| {
-            let user_id: String = conn.query_row(
-                "SELECT id FROM users LIMIT 1",
-                [],
-                |row| row.get(0)
-            )?;
-            Ok(user_id)
-        })
+    pub async fn get_default_user_id(&self) -> AppResult<String> {
+        let row = sqlx::query("SELECT id FROM users LIMIT 1")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| AppError::DatabaseQueryFailed(e.to_string()))?;
+        
+        Ok(row.get("id"))
     }
 }
 
@@ -146,9 +117,7 @@ impl Clone for DatabaseService {
     fn clone(&self) -> Self {
         DatabaseService {
             db_path: self.db_path.clone(),
-            connection_pool: self.connection_pool.clone(),
-            max_connections: self.max_connections,
-            pool_timeout: self.pool_timeout,
+            pool: self.pool.clone(),
         }
     }
-} 
+}

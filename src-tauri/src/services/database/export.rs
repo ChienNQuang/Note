@@ -4,6 +4,7 @@ use crate::models::{Node, NodeWithChildren};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use sqlx::Row;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExportData {
@@ -21,9 +22,9 @@ pub struct NodeLink {
 
 impl DatabaseService {
     /// Export all nodes and links to JSON
-    pub fn export_to_json(&self, path: &Path) -> AppResult<()> {
-        let nodes = self.get_all_nodes()?;
-        let links = self.get_all_links()?;
+    pub async fn export_to_json(&self, path: &Path) -> AppResult<()> {
+        let nodes = self.get_all_nodes().await?;
+        let links = self.get_all_links().await?;
         
         let export_data = ExportData {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -42,50 +43,68 @@ impl DatabaseService {
     }
     
     /// Import nodes and links from JSON
-    pub fn import_from_json(&self, path: &Path) -> AppResult<()> {
+    pub async fn import_from_json(&self, path: &Path) -> AppResult<()> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::FileNotFound(format!("Failed to read import file: {}", e)))?;
         
         let export_data: ExportData = serde_json::from_str(&content)
             .map_err(|e| AppError::Internal(format!("Failed to parse import data: {}", e)))?;
         
-        self.with_transaction(|conn| {
-            // Import nodes
-            for node in &export_data.nodes {
-                conn.execute(
-                    "INSERT OR REPLACE INTO nodes (id, content, parent_id, order_index, properties, tags, created_at, updated_at, created_by, version)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                    rusqlite::params![
-                        node.id,
-                        node.content,
-                        node.parent_id,
-                        node.order,
-                        serde_json::to_string(&node.properties).unwrap(),
-                        serde_json::to_string(&node.tags).unwrap(),
-                        node.created_at,
-                        node.updated_at,
-                        node.created_by,
-                        node.version,
-                    ],
-                )?;
-            }
+        let mut tx = self.pool.begin().await
+            .map_err(|e| AppError::DatabaseConnectionFailed(e.to_string()))?;
+        
+        // Import nodes
+        for node in &export_data.nodes {
+            let properties_json = serde_json::to_string(&node.properties)
+                .map_err(|e| AppError::Internal(format!("Failed to serialize properties: {}", e)))?;
+            let tags_json = serde_json::to_string(&node.tags)
+                .map_err(|e| AppError::Internal(format!("Failed to serialize tags: {}", e)))?;
             
-            // Import links
-            for link in &export_data.links {
-                conn.execute(
-                    "INSERT OR REPLACE INTO node_links (source_node_id, target_node_id)
-                     VALUES (?1, ?2)",
-                    rusqlite::params![link.source_node_id, link.target_node_id],
-                )?;
-            }
-            
-            Ok(())
-        })
+            sqlx::query(
+                r#"
+                INSERT OR REPLACE INTO nodes (id, content, parent_id, order_index, properties, tags, created_at, updated_at, created_by, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#
+            )
+            .bind(&node.id)
+            .bind(&node.content)
+            .bind(&node.parent_id)
+            .bind(node.order)
+            .bind(&properties_json)
+            .bind(&tags_json)
+            .bind(&node.created_at)
+            .bind(&node.updated_at)
+            .bind(&node.created_by)
+            .bind(node.version)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::DatabaseQueryFailed(e.to_string()))?;
+        }
+        
+        // Import links
+        for link in &export_data.links {
+            sqlx::query(
+                r#"
+                INSERT OR REPLACE INTO node_links (source_node_id, target_node_id)
+                VALUES (?, ?)
+                "#
+            )
+            .bind(&link.source_node_id)
+            .bind(&link.target_node_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::DatabaseQueryFailed(e.to_string()))?;
+        }
+        
+        tx.commit().await
+            .map_err(|e| AppError::DatabaseQueryFailed(e.to_string()))?;
+        
+        Ok(())
     }
     
     /// Export a specific node and its descendants to markdown
-    pub fn export_node_to_markdown(&self, node_id: &str) -> AppResult<String> {
-        let node_with_children = self.get_node_with_children(node_id)?;
+    pub async fn export_node_to_markdown(&self, node_id: &str) -> AppResult<String> {
+        let node_with_children = self.get_node_with_children(node_id).await?;
         Ok(self.node_to_markdown(&node_with_children, 0))
     }
     
@@ -107,15 +126,15 @@ impl DatabaseService {
     }
     
     /// Export all nodes as a flat markdown list
-    pub fn export_all_to_markdown(&self) -> AppResult<String> {
-        let root_nodes = self.get_root_nodes()?;
+    pub async fn export_all_to_markdown(&self) -> AppResult<String> {
+        let root_nodes = self.get_root_nodes().await?;
         let mut markdown = String::new();
         
         markdown.push_str("# Note Export\n\n");
         markdown.push_str(&format!("*Exported on: {}*\n\n", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
         
         for root in root_nodes {
-            let node_with_children = self.get_node_with_children(&root.id)?;
+            let node_with_children = self.get_node_with_children(&root.id).await?;
             markdown.push_str(&self.node_to_markdown(&node_with_children, 0));
             markdown.push_str("\n");
         }
@@ -124,52 +143,22 @@ impl DatabaseService {
     }
     
     // Helper methods
-    fn get_all_nodes(&self) -> AppResult<Vec<Node>> {
-        self.with_connection(|conn| {
-            let mut stmt = conn.prepare("
-                SELECT id, content, parent_id, order_index, properties, tags, 
-                       created_at, updated_at, created_by, version
-                FROM nodes
-                ORDER BY parent_id, order_index
-            ")?;
-            
-            let nodes = stmt.query_map([], |row| {
-                Ok(Node {
-                    id: row.get(0)?,
-                    content: row.get(1)?,
-                    parent_id: row.get(2)?,
-                    order: row.get(3)?,
-                    properties: serde_json::from_str(&row.get::<_, String>(4)?).unwrap_or_default(),
-                    tags: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    created_by: row.get(8)?,
-                    version: row.get(9)?,
-                    children: Vec::new(),
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-            
-            Ok(nodes)
-        })
-    }
-    
-    fn get_all_links(&self) -> AppResult<Vec<NodeLink>> {
-        self.with_connection(|conn| {
-            let mut stmt = conn.prepare("
-                SELECT source_node_id, target_node_id
-                FROM node_links
-            ")?;
-            
-            let links = stmt.query_map([], |row| {
-                Ok(NodeLink {
-                    source_node_id: row.get(0)?,
-                    target_node_id: row.get(1)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-            
-            Ok(links)
-        })
+    async fn get_all_links(&self) -> AppResult<Vec<NodeLink>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT source_node_id, target_node_id
+            FROM node_links
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| AppError::DatabaseQueryFailed(e.to_string()))?;
+        
+        let links = rows.into_iter().map(|row| NodeLink {
+            source_node_id: row.get("source_node_id"),
+            target_node_id: row.get("target_node_id"),
+        }).collect();
+        
+        Ok(links)
     }
 }

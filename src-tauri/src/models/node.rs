@@ -36,6 +36,8 @@ pub struct CreateNodeRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateNodeRequest {
     pub content: Option<String>,
+    pub parent_id: Option<String>,
+    pub order: Option<i32>,
     pub properties: Option<HashMap<String, serde_json::Value>>,
     pub tags: Option<Vec<String>>,
 } 
